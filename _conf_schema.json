@@ -1,0 +1,32 @@
+{
+  "default_max_cards": {
+    "description": "默认排卡上限",
+    "type": "int",
+    "default": 30,
+    "hint": "对舞萌/中二各自独立生效，可在聊天中用「设置排卡上限<n>」按聊天覆盖"
+  },
+  "default_mai_machines": {
+    "description": "默认舞萌DX机台数",
+    "type": "int",
+    "default": 1,
+    "hint": "可在聊天中用「设置机台 mai<n> chu<n>」按聊天覆盖"
+  },
+  "default_chu_machines": {
+    "description": "默认中二节奏机台数",
+    "type": "int",
+    "default": 1,
+    "hint": "可在聊天中用「设置机台 mai<n> chu<n>」按聊天覆盖"
+  },
+  "fresh_hours": {
+    "description": "合计推算的参考数据有效期（小时）",
+    "type": "int",
+    "default": 2,
+    "hint": "直接更新机厅合计时，仅把该时间内更新过的分游戏数据当作可信参考（保留不动），另一游戏由 合计-可信值 推算并标注「预计」"
+  },
+  "smart_match_max": {
+    "description": "智能匹配的消息长度上限",
+    "type": "int",
+    "default": 30,
+    "hint": "剥离 @ 后超过该长度的消息不参与消息内智能匹配，防止转发/引用/长聊天误触发；整条消息即指令的精确匹配不受此限制"
+  }
+}
