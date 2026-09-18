@@ -68,7 +68,7 @@ DEFAULT_CHU_M = 1  # 默认中二机台数
 SMART_MATCH_MAX = 30  # 智能匹配的消息长度上限 (剥离@后)
 DEFAULT_FRESH_HOURS = 2  # 合计推算时，分游戏数据的可信有效期 (小时)
 
-GAME_ICON = {"mai": "🎵", "chu": "🎶"}
+GAME_ICON = {"mai": "🐻", "chu": "🐧"}
 DIV = "━━━━━━━━━━━━"
 
 # ---------- 预编译正则 ----------
@@ -742,9 +742,13 @@ class MaimaiQueue(Star):
 
         lines = [f"✅ {fmt_time(now)} 更新成功"]
         if mai_num is not None:
-            lines.append(f"🎵 舞萌DX：{next_mai} 卡（机均 {avg_cards(next_mai, mai_m)}）")
+            lines.append(
+                f"{GAME_ICON['mai']} 舞萌DX：{next_mai} 卡（机均 {avg_cards(next_mai, mai_m)}）"
+            )
         if chu_num is not None:
-            lines.append(f"🎶 中二节奏：{next_chu} 卡（机均 {avg_cards(next_chu, chu_m)}）")
+            lines.append(
+                f"{GAME_ICON['chu']} 中二节奏：{next_chu} 卡（机均 {avg_cards(next_chu, chu_m)}）"
+            )
         lines.append(f"🧮 机厅合计：{new_tot} 卡")
         return ("\n".join(lines), True)
 
