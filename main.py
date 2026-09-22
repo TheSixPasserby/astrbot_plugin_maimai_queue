@@ -38,6 +38,10 @@
 #       (超过单游戏上限时溢出到中二)，太久远的旧数据保持不变;
 #     - 推算出的数据标注「预计」，并提示可能不准确。
 #   舞萌 / 中二 / 合计 三组数据各自独立跨天清零。
+#
+# QQ 官方机器人 (qq_official) 平台下以 Markdown 排版回复，并附带
+# <qqbot-cmd-input> 可点击指令按钮、<qqbot-at-user> 艾特标签;
+# 其他平台保持纯文本。可在插件配置 markdown_enabled 中关闭。
 # ============================================================
 
 import json
@@ -46,6 +50,7 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
@@ -70,6 +75,11 @@ DEFAULT_FRESH_HOURS = 2  # 合计推算时，分游戏数据的可信有效期 (
 
 GAME_ICON = {"mai": "🐻", "chu": "🐧"}
 DIV = "━━━━━━━━━━━━"
+
+# Markdown 排版下需替换为全角的字符 (防止昵称/别名中的特殊字符破坏排版)
+MD_SAFE = str.maketrans(
+    {"*": "＊", "_": "＿", "~": "～", "#": "＃", "`": "｀", ">": "＞", "<": "＜", "[": "［", "]": "］"}
+)
 
 # ---------- 预编译正则 ----------
 NUM = r"(0|[1-9]\d*)"
@@ -192,6 +202,21 @@ def game_label(g: str) -> str:
     return "舞萌DX" if g == "mai" else "中二节奏"
 
 
+def md_escape(s) -> str:
+    """昵称/别名等用户内容中的 Markdown 字符替换为全角，防止破坏排版"""
+    return str(s).translate(MD_SAFE)
+
+
+def cmd_btn(text: str, show: str = "") -> str:
+    """QQ 官方 Markdown 可点击指令标签: 点击后把指令填入用户输入框 (text/show 需 urlencode)"""
+    return f'<qqbot-cmd-input text="{quote(text, safe="")}" show="{quote(show or text, safe="")}" />'
+
+
+def btn_row(*cmds: str) -> str:
+    """一行可点击指令按钮"""
+    return "💡 " + " ".join(cmd_btn(c) for c in cmds)
+
+
 class MaimaiQueue(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -201,6 +226,7 @@ class MaimaiQueue(Star):
         self.def_chu = int(cfg.get("default_chu_machines", DEFAULT_CHU_M))
         self.smart_max = int(cfg.get("smart_match_max", SMART_MATCH_MAX) or SMART_MATCH_MAX)
         self.fresh_hours = int(cfg.get("fresh_hours", DEFAULT_FRESH_HOURS) or DEFAULT_FRESH_HOURS)
+        self.md_enabled = bool(cfg.get("markdown_enabled", True))
 
         self.note = (
             "📋 到达机厅后发 j+1（机厅合计）或 mai+1 / chu+1（分游戏）加卡，"
@@ -233,6 +259,50 @@ class MaimaiQueue(Star):
             "添加机厅别名 <别名> / 删除机厅别名 <别名>\n"
             "设置机台 mai<n> chu<n> …设置机台数\n"
             f"设置排卡上限<n> …默认{self.def_max}，舞萌/中二各自独立生效"
+        )
+
+        # ---- QQ 官方机器人 Markdown 版文案 (角括号会被识别为标签，改用示例写法) ----
+        self.note_md = "\n".join(
+            [
+                "📋 到达机厅后发 j+1（机厅合计）或 mai+1 / chu+1（分游戏）加卡，"
+                "退勤时对应 -1 减卡，可修改数字一次增减多张",
+                "",
+                "- jn / main / chun 快速设置，mai3chu2 一次更新两个游戏",
+                f"- 直接更新合计时会按 {self.fresh_hours} 小时内的分游戏数据自动推算另一游戏"
+                "（推算值标注「预计」）",
+                "- j 查看总览，mai几 / chu几 查看对应游戏，排卡帮助 查看全部指令",
+                "",
+                btn_row("j", "j+1", "mai+1", "chu+1", "排卡帮助"),
+            ]
+        )
+
+        self.help_md = "\n".join(
+            [
+                "## 📖 排卡指令帮助",
+                "### ▎查询",
+                "- **j** / 机厅几人 … 排卡总览",
+                "- **mai几** / 舞萌几 … 舞萌排卡",
+                "- **chu几** / 中二几 … 中二排卡",
+                "- **机厅别名几** … 排卡总览",
+                "- **机厅别名** … 查看已设置的别名",
+                "### ▎更新",
+                "- **j+n / j-n / jn** … 机厅合计 加/减/设置",
+                "- **别名+n / 别名-n / 别名n** … 机厅合计 加/减/设置",
+                "- **mai+n / mai-n / main** … 舞萌（舞萌 前缀同效）",
+                "- **chu+n / chu-n / chun** … 中二（中二 前缀同效）",
+                "- **mai3chu2** … 同时更新两个游戏（顺序可换、可用逗号分隔）",
+                "",
+                f"> 直接更新合计时，按 {self.fresh_hours} 小时内的分游戏数据自动推算另一游戏，"
+                "推算值标注「预计」",
+                f"> 消息中含 mai+1 / chu-1 这类带符号指令也能识别（超 {self.smart_max} 字长消息除外）",
+                "### ▎管理员",
+                "- 开启排卡 / 关闭排卡 … 本聊天排卡开关",
+                "- 添加机厅别名 xx / 删除机厅别名 xx",
+                "- 设置机台 mai2 chu1 … 设置机台数",
+                f"- 设置排卡上限{self.def_max} … 舞萌/中二各自独立生效",
+                "",
+                btn_row("j", "j+1", "j-1", "mai+1", "chu+1"),
+            ]
         )
 
         # 持久化数据存于 data/plugin_data/<plugin_name>/，防止更新插件时被覆盖
@@ -283,11 +353,11 @@ class MaimaiQueue(Star):
     def _match_alias(self, chat: dict, name: str) -> bool:
         return any(normalize(a) == name for a in self._aliases(chat))
 
-    def _alias_line(self, chat: dict) -> str:
+    def _alias_line(self, chat: dict, md: bool = False) -> str:
         al = self._aliases(chat)
         if not al:
             return ""
-        return "🏷 机厅别名：" + " / ".join(al)
+        return "🏷 机厅别名：" + " / ".join(md_escape(a) if md else a for a in al)
 
     # ==================== 排卡数据 (mai/chu 分游戏 + tot 合计) ====================
 
@@ -402,7 +472,7 @@ class MaimaiQueue(Star):
 
     # ==================== 展示 ====================
 
-    def _game_line(self, chat: dict, g: str) -> str:
+    def _game_line(self, chat: dict, g: str, md: bool = False) -> str:
         m = self._machines(chat, g)
         if m <= 0:
             return ""  # 无机台不显示
@@ -412,6 +482,16 @@ class MaimaiQueue(Star):
             return f"{icon} {label}：暂无排卡数据"
         cards = int(d["p"])
         est = bool(d.get("est"))
+        if md:
+            head = (
+                f"**{icon} {label}：{'预计 ' if est else ''}{cards} 卡**"
+                f"（{m}台 · 机均 {avg_cards(cards, m)}）"
+            )
+            if est:
+                sub = f"> ⚠ 推算数据，可能不准确（{time_diff(d['t'])}前）"
+            else:
+                sub = f"> ⏱ {time_diff(d['t'])}前 由 {md_escape(d['name'])} 更新"
+            return head + "\n" + sub
         head = (
             f"{icon} {label}：{'预计 ' if est else ''}{cards} 卡"
             f"（{m}台 · 机均 {avg_cards(cards, m)}）"
@@ -422,22 +502,47 @@ class MaimaiQueue(Star):
             sub = f"　⏱ {time_diff(d['t'])}前 由 {d['name']} 更新"
         return head + "\n" + sub
 
-    def _total_line(self, chat: dict) -> str:
+    def _total_line(self, chat: dict, md: bool = False) -> str:
         tot = self._grp(chat, "tot")
         if tot["u"]:
             cards = int(tot["p"])
             m = self._tot_machines(chat)
+            if md:
+                return (
+                    f"**🧮 合计：{cards} 卡**（{m}台 · 机均 {avg_cards(cards, m)}）\n"
+                    f"> ⏱ {time_diff(tot['t'])}前 由 {md_escape(tot['name'])} 更新"
+                )
             return (
                 f"🧮 合计：{cards} 卡（{m}台 · 机均 {avg_cards(cards, m)}）\n"
                 f"　⏱ {time_diff(tot['t'])}前 由 {tot['name']} 更新"
             )
         total = int(self._grp(chat, "mai")["p"]) + int(self._grp(chat, "chu")["p"])
-        return f"🧮 合计：{total} 卡"
+        return f"**🧮 合计：{total} 卡**" if md else f"🧮 合计：{total} 卡"
 
-    def _overview(self, chat: dict) -> str:
+    def _overview(self, chat: dict, md: bool = False) -> str:
         mai_u = self._grp(chat, "mai")["u"]
         chu_u = self._grp(chat, "chu")["u"]
         tot_u = self._grp(chat, "tot")["u"]
+        if md:
+            # 引用块后需空行隔断，防止后续内容被并入引用
+            lines = ["## 🎪 机厅数据如下"]
+            if not mai_u and not chu_u and not tot_u:
+                lines.append("当前还没有人更新过排卡数据")
+            else:
+                for g in ("mai", "chu"):
+                    gl = self._game_line(chat, g, md=True)
+                    if gl:
+                        lines.append(gl)
+                        lines.append("")
+                lines.append("***")
+                lines.append(self._total_line(chat, md=True))
+                lines.append("")
+            al = self._alias_line(chat, md=True)
+            if al:
+                lines.append(al)
+            lines.append("***")
+            lines.append(btn_row("j+1", "j-1", "mai+1", "chu+1", "排卡帮助"))
+            return "\n".join(lines)
         lines = ["🎪 机厅数据如下", DIV]
         if not mai_u and not chu_u and not tot_u:
             lines.append("当前还没有人更新过排卡数据")
@@ -460,10 +565,20 @@ class MaimaiQueue(Star):
 
     # ==================== 消息处理 ====================
 
+    def _use_md(self, event: AstrMessageEvent) -> bool:
+        """QQ 官方机器人平台 (qq_official / qq_official_webhook) 下启用 Markdown 排版"""
+        if not self.md_enabled:
+            return False
+        try:
+            return str(event.get_platform_name() or "").startswith("qq_official")
+        except Exception:
+            return False
+
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
+        md = self._use_md(event)
         try:
-            res = self._handle(event)
+            res = self._handle(event, md)
         except Exception as e:
             logger.error(f"[{PLUGIN_NAME}] 处理消息出错: {e}", exc_info=True)
             return
@@ -473,16 +588,23 @@ class MaimaiQueue(Star):
         chain = []
         if with_at and event.get_group_id():
             # 群聊回复艾特操作人，私聊不带
-            chain.append(Comp.At(qq=event.get_sender_id()))
-            chain.append(Comp.Plain(" " + text))
+            if md:
+                # 官方适配器发送时会丢弃 At 组件，Markdown 下改用官方艾特标签
+                chain.append(
+                    Comp.Plain(f'<qqbot-at-user id="{event.get_sender_id()}" />\n{text}')
+                )
+            else:
+                chain.append(Comp.At(qq=event.get_sender_id()))
+                chain.append(Comp.Plain(" " + text))
         else:
             chain.append(Comp.Plain(text))
         yield event.chain_result(chain)
         # 已作为排卡指令处理，阻止事件继续传播 (不再触发 LLM / 其他插件)
         event.stop_event()
 
-    def _handle(self, event: AstrMessageEvent):
-        """解析并执行排卡指令。返回 (回复文本, 是否艾特操作人)，非指令返回 None"""
+    def _handle(self, event: AstrMessageEvent, md: bool = False):
+        """解析并执行排卡指令。返回 (回复文本, 是否艾特操作人)，非指令返回 None。
+        md=True 时输出 QQ 官方 Markdown 排版"""
         raw = strip_codes(event.message_str or "")
         cmd = normalize(raw)  # 无空白，精确指令
         if not cmd:
@@ -511,6 +633,9 @@ class MaimaiQueue(Star):
                 return ("本聊天已开启排卡功能", False)
             chat["enabled"] = True
             self._save()
+            if md:
+                head = "**✅ 排卡功能已开启**，开始统计本聊天的排卡数据\n"
+                return (head + self.note_md, False)
             return ("✅ 排卡功能已开启，开始统计本聊天的排卡数据\n" + self.note, False)
 
         if cmd == "关闭排卡":
@@ -533,12 +658,16 @@ class MaimaiQueue(Star):
 
         # ---------- 帮助 ----------
         if cmd in ("排卡帮助", "帮助排卡"):
-            return (self.help_text, True)
+            return (self.help_md if md else self.help_text, True)
 
         # ---------- 机厅别名查询 ----------
         if cmd in ("机厅别名", "别名列表"):
-            line = self._alias_line(chat)
-            return (line or "暂无机厅别名，管理员可使用 添加机厅别名 <别名> 添加", True)
+            line = self._alias_line(chat, md)
+            if line:
+                return (line, True)
+            # Markdown 下角括号会被识别为标签，示例写法改用 xx
+            tip = "添加机厅别名 xx" if md else "添加机厅别名 <别名>"
+            return (f"暂无机厅别名，管理员可使用 {tip} 添加", True)
 
         # ---------- 以下管理指令仅管理员可用 ----------
         if cmd.startswith("添加机厅别名") or cmd.startswith("删除机厅别名"):
@@ -547,7 +676,9 @@ class MaimaiQueue(Star):
             is_add = cmd.startswith("添加机厅别名")
             args = split_args(raw)
             if len(args) < 2:
-                return (f"指令错误，格式: {'添加' if is_add else '删除'}机厅别名 <别名>", True)
+                fmt = f"{'添加' if is_add else '删除'}机厅别名"
+                example = f"{fmt} xx" if md else f"{fmt} <别名>"
+                return (f"指令错误，格式: {example}", True)
             alias = args[1].replace(",", "").strip()
             if not alias:
                 return ("别名不能为空", True)
@@ -557,7 +688,7 @@ class MaimaiQueue(Star):
                     return ("已存在该别名", True)
                 al.append(alias)
                 self._save()
-                return ("✅ 别名已添加\n" + self._alias_line(chat), True)
+                return ("✅ 别名已添加\n" + self._alias_line(chat, md), True)
             na = normalize(alias)
             for i, a in enumerate(al):
                 if normalize(a) == na:
@@ -600,7 +731,7 @@ class MaimaiQueue(Star):
 
         # ---------- j: 排卡总览 ----------
         if cmd in ("j", "机厅几人"):
-            return (self._overview(chat), True)
+            return (self._overview(chat, md), True)
 
         # ---------- mai几 / chu几: 单游戏查询 ----------
         qm = RE_QUERY.fullmatch(cmd)
@@ -616,6 +747,20 @@ class MaimaiQueue(Star):
             cards = int(d["p"])
             t = int(d["t"])
             est = bool(d.get("est"))
+            if md:
+                lines = [
+                    f"**{icon} {label}：{'预计 ' if est else ''}{cards} 卡**"
+                    f"（{m}台 · 机均 {avg_cards(cards, m)}）"
+                ]
+                if est:
+                    lines.append("> ⚠ 该数据由合计推算，可能不准确")
+                lines.append(
+                    f"> ⏱ 由 {md_escape(d['name'])} ({d['uid']}) 更新于 "
+                    f"{fmt_time(t)}（{time_diff(t)}前）"
+                )
+                lines.append("")
+                lines.append(btn_row(f"{g}+1", f"{g}-1", "j"))
+                return ("\n".join(lines), True)
             lines = [
                 f"{icon} {label}：{'预计 ' if est else ''}{cards} 卡"
                 f"（{m}台 · 机均 {avg_cards(cards, m)}）"
@@ -630,7 +775,7 @@ class MaimaiQueue(Star):
             if cmd.endswith(suf) and len(cmd) > len(suf):
                 name = cmd[: -len(suf)]
                 if name == "机厅" or self._match_alias(chat, name):
-                    return (self._overview(chat), True)
+                    return (self._overview(chat, md), True)
                 break  # 非别名继续走后面的智能匹配
 
         uid = str(event.get_sender_id())
@@ -666,6 +811,15 @@ class MaimaiQueue(Star):
             infer_lines = self._distribute_total(chat, nxt, now, uid, uname, max_cards)
             self._save()
             m = self._tot_machines(chat)
+            if md:
+                lines = [
+                    f"**✅ {fmt_time(now)} 更新成功**",
+                    f"> 🧮 机厅合计：{nxt} 卡（{m}台 · 机均 {avg_cards(nxt, m)}）",
+                ]
+                lines.extend(f"> {ln}" for ln in infer_lines)
+                lines.append("")
+                lines.append(btn_row("j", "j+1", "j-1"))
+                return ("\n".join(lines), True)
             lines = [
                 f"✅ {fmt_time(now)} 更新成功",
                 f"🧮 机厅合计：{nxt} 卡（{m}台 · 机均 {avg_cards(nxt, m)}）",
@@ -739,6 +893,26 @@ class MaimaiQueue(Star):
         new_tot = min(new_tot, self._tot_max_cards(chat, max_cards))
         self._write_cards(chat, "tot", new_tot, now, uid, uname)
         self._save()
+
+        if md:
+            lines = [f"**✅ {fmt_time(now)} 更新成功**"]
+            if mai_num is not None:
+                lines.append(
+                    f"> {GAME_ICON['mai']} 舞萌DX：{next_mai} 卡（机均 {avg_cards(next_mai, mai_m)}）"
+                )
+            if chu_num is not None:
+                lines.append(
+                    f"> {GAME_ICON['chu']} 中二节奏：{next_chu} 卡（机均 {avg_cards(next_chu, chu_m)}）"
+                )
+            lines.append(f"> 🧮 机厅合计：{new_tot} 卡")
+            btns = ["j"]
+            if mai_num is not None:
+                btns += ["mai+1", "mai-1"]
+            if chu_num is not None:
+                btns += ["chu+1", "chu-1"]
+            lines.append("")
+            lines.append(btn_row(*btns))
+            return ("\n".join(lines), True)
 
         lines = [f"✅ {fmt_time(now)} 更新成功"]
         if mai_num is not None:

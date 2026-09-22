@@ -28,5 +28,11 @@
     "type": "int",
     "default": 30,
     "hint": "剥离 @ 后超过该长度的消息不参与消息内智能匹配，防止转发/引用/长聊天误触发；整条消息即指令的精确匹配不受此限制"
+  },
+  "markdown_enabled": {
+    "description": "QQ官方机器人使用 Markdown 排版",
+    "type": "bool",
+    "default": true,
+    "hint": "仅对 qq_official / qq_official_webhook 平台生效：回复使用标题/加粗/引用等 Markdown 排版，并附带可点击的指令按钮与 @ 标签；其他平台始终纯文本。需保持 AstrBot 平台配置中的 use_markdown 开启（默认开启）"
   }
 }

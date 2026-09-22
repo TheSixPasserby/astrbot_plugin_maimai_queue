@@ -47,6 +47,17 @@
 - 群聊回复会 @ 操作人，私聊不带
 - 识别为排卡指令后会 `stop_event()`，不再触发 LLM 或其他插件；非指令消息不受影响
 
+### QQ 官方机器人 Markdown 排版
+
+接入 QQ 官方机器人（`qq_official` / `qq_official_webhook` 平台）时，回复自动切换为 Markdown 排版（其他平台不受影响，始终纯文本）：
+
+- 标题 / 加粗 / 引用块 / 分割线排版，总览、更新回执、单游戏查询、帮助均有独立版式
+- 附带 `<qqbot-cmd-input>` **可点击指令按钮**（如 `j+1`、`mai+1`、`排卡帮助`），点击后指令自动填入输入框
+- @ 操作人改用官方 `<qqbot-at-user>` 标签（官方适配器发送时会丢弃普通 At 组件）
+- 昵称 / 别名中的 Markdown 特殊字符自动转为全角，防止破坏排版
+
+依赖 AstrBot qq_official 适配器的原生 Markdown 发送能力（平台配置 `use_markdown`，默认开启；发送被拒时适配器会自动回退纯文本）。腾讯已将自定义 Markdown 开放给所有机器人的单聊/群聊场景，无需申请模板。如需关闭本插件的 Markdown 排版，在插件配置中关掉 `markdown_enabled` 即可。
+
 ### 合计推算（直接更新合计时）
 
 `j+n` / `j-n` / `j=n` / 别名指令直接更新机厅合计后，插件会按分游戏数据**反向推算**：
@@ -93,6 +104,7 @@ WebUI 插件配置页可调整（`_conf_schema.json`）：
 - `default_mai_machines` / `default_chu_machines` — 默认机台数（默认各 1）
 - `fresh_hours` — 合计推算的参考数据有效期，小时（默认 2）
 - `smart_match_max` — 智能匹配的消息长度上限（默认 30）
+- `markdown_enabled` — QQ 官方机器人下使用 Markdown 排版与可点击指令按钮（默认开启）
 
 以上为全局默认值，聊天内的 `设置机台` / `设置排卡上限` 按聊天覆盖。
 
