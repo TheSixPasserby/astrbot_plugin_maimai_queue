@@ -52,5 +52,11 @@
     "type": "bool",
     "default": false,
     "hint": "在消息内嵌 qqbot-cmd-input 可点击指令（如 j+1）：手机 QQ 点击后自动填入输入框，桌面端仅显示为蓝色文字不可交互。已启用底部按钮时此项无效"
+  },
+  "md_at_user": {
+    "description": "Markdown 回复 @ 操作人",
+    "type": "bool",
+    "default": true,
+    "hint": "群聊 Markdown 回复首行附带 qqbot-at-user 艾特标签。若客户端渲染时 @ 引入多余空行，可关闭此项（数据行中本就显示更新人昵称）"
   }
 }

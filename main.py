@@ -278,6 +278,9 @@ class MaimaiQueue(Star):
         self.inline_btns = bool(cfg.get("md_inline_buttons", False)) and not (
             self.md_buttons or self.btn_tpl
         )
+        # Markdown 下是否 @ 操作人 (qqbot-at-user 标签)。部分客户端场景下
+        # @ 标签会引入多余空行，不需要时可关闭 (数据行中本就记录更新人昵称)
+        self.md_at = bool(cfg.get("md_at_user", True))
 
         self.note = (
             "📋 到达机厅后发 j+1（机厅合计）或 mai+1 / chu+1（分游戏）加卡，"
@@ -328,14 +331,14 @@ class MaimaiQueue(Star):
 
         self.help_md = "\n".join(
             [
-                "## 📖 排卡指令帮助",
-                "### ▎查询",
+                "**📖 排卡指令帮助**",
+                "**▎查询**",
                 "- **j** / 机厅几人 … 排卡总览",
                 "- **mai几** / 舞萌几 … 舞萌排卡",
                 "- **chu几** / 中二几 … 中二排卡",
                 "- **机厅别名几** … 排卡总览",
                 "- **机厅别名** … 查看已设置的别名",
-                "### ▎更新",
+                "**▎更新**",
                 "- **j+n / j-n / jn** … 机厅合计 加/减/设置",
                 "- **别名+n / 别名-n / 别名n** … 机厅合计 加/减/设置",
                 "- **mai+n / mai-n / main** … 舞萌（舞萌 前缀同效）",
@@ -345,7 +348,7 @@ class MaimaiQueue(Star):
                 f"> 直接更新合计时，按 {self.fresh_hours} 小时内的分游戏数据自动推算另一游戏，"
                 "推算值标注「预计」",
                 f"> 消息中含 mai+1 / chu-1 这类带符号指令也能识别（超 {self.smart_max} 字长消息除外）",
-                "### ▎管理员",
+                "**▎管理员**",
                 "- 开启排卡 / 关闭排卡 … 本聊天排卡开关",
                 "- 添加机厅别名 xx / 删除机厅别名 xx",
                 "- 设置机台 mai2 chu1 … 设置机台数",
@@ -579,8 +582,9 @@ class MaimaiQueue(Star):
         chu_u = self._grp(chat, "chu")["u"]
         tot_u = self._grp(chat, "tot")["u"]
         if md:
-            # 引用块后需空行隔断，防止后续内容被并入引用
-            lines = ["## 🎪 机厅数据如下"]
+            # 引用块后需空行隔断，防止后续内容被并入引用；
+            # 首行用加粗而非 # 标题，便于群聊时与 @ 标签同行且无标题块上边距
+            lines = ["**🎪 机厅数据如下**"]
             if not mai_u and not chu_u and not tot_u:
                 lines.append("当前还没有人更新过排卡数据")
             else:
@@ -670,8 +674,10 @@ class MaimaiQueue(Star):
         if with_at and event.get_group_id():
             # 群聊回复艾特操作人，私聊不带
             if md:
-                # 官方适配器发送时会丢弃 At 组件，Markdown 下改用官方艾特标签
-                text = f'<qqbot-at-user id="{event.get_sender_id()}" />\n{text}'
+                # 官方适配器发送时会丢弃 At 组件，Markdown 下改用官方艾特标签。
+                # 与首行同行拼接，避免 @ 标签独占段落产生多余空行
+                if self.md_at:
+                    text = f'<qqbot-at-user id="{event.get_sender_id()}" /> {text}'
                 chain.append(Comp.Plain(text))
             else:
                 chain.append(Comp.At(qq=event.get_sender_id()))

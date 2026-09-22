@@ -122,6 +122,7 @@ WebUI 插件配置页可调整（`_conf_schema.json`）：
 - `md_buttons` — Markdown 消息底部挂载内置按钮组（默认开启）
 - `md_button_template_id` — 按钮模板 ID，填入后替代内置按钮（默认空）
 - `md_inline_buttons` — Markdown 消息内附带链接式指令（默认关闭）
+- `md_at_user` — Markdown 回复 @ 操作人（默认开启，@ 与首行同行显示；如仍出现多余空行可关闭）
 
 以上为全局默认值，聊天内的 `设置机台` / `设置排卡上限` 按聊天覆盖。
 
