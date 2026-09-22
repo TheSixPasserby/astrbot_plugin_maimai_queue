@@ -218,6 +218,47 @@ def btn_row(*cmds: str) -> str:
     return "💡 " + " ".join(cmd_btn(c) for c in cmds)
 
 
+def _kb_button(bid: str, label: str, data: str, style: int = 0) -> dict:
+    """keyboard 指令按钮: 点击后自动发送指令 (旧版客户端不支持 enter 时提示升级)"""
+    return {
+        "id": bid,
+        "render_data": {"label": label, "visited_label": label, "style": style},
+        "action": {
+            "type": 2,
+            "permission": {"type": 2},
+            "data": data,
+            "enter": True,
+            "unsupport_tips": "请升级新版QQ后重试",
+        },
+    }
+
+
+def default_keyboard() -> dict:
+    """默认自定义按钮组: 分游戏一行 + 合计/查询一行"""
+    return {
+        "content": {
+            "rows": [
+                {
+                    "buttons": [
+                        _kb_button("mai_add", "🐻+1", "mai+1"),
+                        _kb_button("mai_sub", "🐻-1", "mai-1"),
+                        _kb_button("chu_add", "🐧+1", "chu+1"),
+                        _kb_button("chu_sub", "🐧-1", "chu-1"),
+                    ]
+                },
+                {
+                    "buttons": [
+                        _kb_button("tot_add", "合计+1", "j+1"),
+                        _kb_button("tot_sub", "合计-1", "j-1"),
+                        _kb_button("overview", "📊 总览", "j", style=1),
+                        _kb_button("help", "📖 帮助", "排卡帮助", style=1),
+                    ]
+                },
+            ]
+        }
+    }
+
+
 class MaimaiQueue(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -228,11 +269,15 @@ class MaimaiQueue(Star):
         self.smart_max = int(cfg.get("smart_match_max", SMART_MATCH_MAX) or SMART_MATCH_MAX)
         self.fresh_hours = int(cfg.get("fresh_hours", DEFAULT_FRESH_HOURS) or DEFAULT_FRESH_HOURS)
         self.md_enabled = bool(cfg.get("markdown_enabled", True))
-        # 按钮模板 ID (QQ 开放平台申请)；配置后 Markdown 消息底部挂载真实按钮，
-        # 并不再附带消息内的链接式指令
+        # 消息底部真实按钮: 默认使用代码内置的自定义按钮 (已全量开放)；
+        # 也可填按钮模板 ID 使用开放平台配置的模板 (优先级更高)
+        self.md_buttons = bool(cfg.get("md_buttons", True))
         self.btn_tpl = str(cfg.get("md_button_template_id", "") or "").strip()
-        # 消息内链接式指令 (qqbot-cmd-input): 手机端点击可填入指令，桌面端仅显示为蓝色文字
-        self.inline_btns = bool(cfg.get("md_inline_buttons", True)) and not self.btn_tpl
+        # 消息内链接式指令 (qqbot-cmd-input): 手机端点击可填入指令，桌面端仅显示为蓝色文字。
+        # 已有真实按钮时无需开启
+        self.inline_btns = bool(cfg.get("md_inline_buttons", False)) and not (
+            self.md_buttons or self.btn_tpl
+        )
 
         self.note = (
             "📋 到达机厅后发 j+1（机厅合计）或 mai+1 / chu+1（分游戏）加卡，"
@@ -586,17 +631,18 @@ class MaimaiQueue(Star):
             return False
 
     async def _send_md_with_keyboard(self, event: AstrMessageEvent, text: str) -> bool:
-        """配置了按钮模板时，直接调 botpy API 发送 markdown + 模板按钮。
+        """启用真实按钮时，直接调 botpy API 发送 markdown + keyboard。
         成功返回 True；失败返回 False 由调用方回退普通发送"""
         api = getattr(getattr(event, "bot", None), "api", None)
         if api is None:
             return False
+        keyboard = {"id": self.btn_tpl} if self.btn_tpl else default_keyboard()
         payload = {
             "msg_type": 2,
             "msg_id": event.message_obj.message_id,
             "msg_seq": random.randint(1, 10000),
             "markdown": {"content": text},
-            "keyboard": {"id": self.btn_tpl},
+            "keyboard": keyboard,
         }
         try:
             gid = event.get_group_id()
@@ -606,7 +652,7 @@ class MaimaiQueue(Star):
                 await api.post_c2c_message(openid=str(event.get_sender_id()), **payload)
             return True
         except Exception as e:
-            logger.warning(f"[{PLUGIN_NAME}] 模板按钮消息发送失败，回退普通发送: {e}")
+            logger.warning(f"[{PLUGIN_NAME}] 按钮消息发送失败，回退普通发送: {e}")
             return False
 
     @filter.event_message_type(filter.EventMessageType.ALL)
@@ -632,8 +678,10 @@ class MaimaiQueue(Star):
                 chain.append(Comp.Plain(" " + text))
         else:
             chain.append(Comp.Plain(text))
-        # 配置了按钮模板时优先带按钮直发，失败回退适配器普通发送
-        if md and self.btn_tpl and await self._send_md_with_keyboard(event, text):
+        # 启用真实按钮时优先带按钮直发，失败回退适配器普通发送
+        if md and (self.md_buttons or self.btn_tpl) and await self._send_md_with_keyboard(
+            event, text
+        ):
             event.stop_event()
             return
         yield event.chain_result(chain)

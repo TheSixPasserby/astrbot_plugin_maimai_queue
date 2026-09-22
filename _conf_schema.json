@@ -35,16 +35,22 @@
     "default": true,
     "hint": "仅对 qq_official / qq_official_webhook 平台生效：回复使用标题/加粗/引用等 Markdown 排版与 @ 标签；其他平台始终纯文本。需保持 AstrBot 平台配置中的 use_markdown 开启（默认开启）"
   },
+  "md_buttons": {
+    "description": "Markdown 消息底部挂载按钮",
+    "type": "bool",
+    "default": true,
+    "hint": "使用插件内置的自定义按钮组（🐻±1 / 🐧±1 / 合计±1 / 总览 / 帮助），点击直接发送对应指令。发送失败自动回退无按钮的 Markdown"
+  },
   "md_button_template_id": {
-    "description": "按钮模板 ID（消息底部真实按钮）",
+    "description": "按钮模板 ID（可选）",
     "type": "string",
     "default": "",
-    "hint": "在 QQ 开放平台申请「按钮模板」后填入模板 ID，Markdown 消息底部将挂载真实按钮（模板内容在开放平台配置，建议配 j+1 / j-1 / mai+1 / chu+1 / j 等指令按钮）。配置后自动停用消息内的链接式指令。发送失败会自动回退普通 Markdown"
+    "hint": "如需使用 QQ 开放平台配置的按钮模板，填入模板 ID 后将替代内置自定义按钮"
   },
   "md_inline_buttons": {
     "description": "Markdown 消息内附带链接式指令",
     "type": "bool",
-    "default": true,
-    "hint": "在消息内嵌 qqbot-cmd-input 可点击指令（如 j+1）：手机 QQ 点击后自动填入输入框，桌面端仅显示为蓝色文字不可交互。已配置按钮模板时此项无效"
+    "default": false,
+    "hint": "在消息内嵌 qqbot-cmd-input 可点击指令（如 j+1）：手机 QQ 点击后自动填入输入框，桌面端仅显示为蓝色文字不可交互。已启用底部按钮时此项无效"
   }
 }
