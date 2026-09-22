@@ -46,6 +46,7 @@
 
 import json
 import os
+import random
 import re
 import time
 from datetime import datetime
@@ -227,6 +228,11 @@ class MaimaiQueue(Star):
         self.smart_max = int(cfg.get("smart_match_max", SMART_MATCH_MAX) or SMART_MATCH_MAX)
         self.fresh_hours = int(cfg.get("fresh_hours", DEFAULT_FRESH_HOURS) or DEFAULT_FRESH_HOURS)
         self.md_enabled = bool(cfg.get("markdown_enabled", True))
+        # 按钮模板 ID (QQ 开放平台申请)；配置后 Markdown 消息底部挂载真实按钮，
+        # 并不再附带消息内的链接式指令
+        self.btn_tpl = str(cfg.get("md_button_template_id", "") or "").strip()
+        # 消息内链接式指令 (qqbot-cmd-input): 手机端点击可填入指令，桌面端仅显示为蓝色文字
+        self.inline_btns = bool(cfg.get("md_inline_buttons", True)) and not self.btn_tpl
 
         self.note = (
             "📋 到达机厅后发 j+1（机厅合计）或 mai+1 / chu+1（分游戏）加卡，"
@@ -271,9 +277,8 @@ class MaimaiQueue(Star):
                 f"- 直接更新合计时会按 {self.fresh_hours} 小时内的分游戏数据自动推算另一游戏"
                 "（推算值标注「预计」）",
                 "- j 查看总览，mai几 / chu几 查看对应游戏，排卡帮助 查看全部指令",
-                "",
-                btn_row("j", "j+1", "mai+1", "chu+1", "排卡帮助"),
             ]
+            + self._btn_lines("j", "j+1", "mai+1", "chu+1", "排卡帮助")
         )
 
         self.help_md = "\n".join(
@@ -300,9 +305,8 @@ class MaimaiQueue(Star):
                 "- 添加机厅别名 xx / 删除机厅别名 xx",
                 "- 设置机台 mai2 chu1 … 设置机台数",
                 f"- 设置排卡上限{self.def_max} … 舞萌/中二各自独立生效",
-                "",
-                btn_row("j", "j+1", "j-1", "mai+1", "chu+1"),
             ]
+            + self._btn_lines("j", "j+1", "j-1", "mai+1", "chu+1")
         )
 
         # 持久化数据存于 data/plugin_data/<plugin_name>/，防止更新插件时被覆盖
@@ -472,6 +476,12 @@ class MaimaiQueue(Star):
 
     # ==================== 展示 ====================
 
+    def _btn_lines(self, *cmds: str) -> list:
+        """消息内链接式指令行 (含前置空行)；关闭或已配置按钮模板时为空"""
+        if not self.inline_btns:
+            return []
+        return ["", btn_row(*cmds)]
+
     def _game_line(self, chat: dict, g: str, md: bool = False) -> str:
         m = self._machines(chat, g)
         if m <= 0:
@@ -540,8 +550,9 @@ class MaimaiQueue(Star):
             al = self._alias_line(chat, md=True)
             if al:
                 lines.append(al)
-            lines.append("***")
-            lines.append(btn_row("j+1", "j-1", "mai+1", "chu+1", "排卡帮助"))
+            if self.inline_btns:
+                lines.append("***")
+                lines.append(btn_row("j+1", "j-1", "mai+1", "chu+1", "排卡帮助"))
             return "\n".join(lines)
         lines = ["🎪 机厅数据如下", DIV]
         if not mai_u and not chu_u and not tot_u:
@@ -574,6 +585,30 @@ class MaimaiQueue(Star):
         except Exception:
             return False
 
+    async def _send_md_with_keyboard(self, event: AstrMessageEvent, text: str) -> bool:
+        """配置了按钮模板时，直接调 botpy API 发送 markdown + 模板按钮。
+        成功返回 True；失败返回 False 由调用方回退普通发送"""
+        api = getattr(getattr(event, "bot", None), "api", None)
+        if api is None:
+            return False
+        payload = {
+            "msg_type": 2,
+            "msg_id": event.message_obj.message_id,
+            "msg_seq": random.randint(1, 10000),
+            "markdown": {"content": text},
+            "keyboard": {"id": self.btn_tpl},
+        }
+        try:
+            gid = event.get_group_id()
+            if gid:
+                await api.post_group_message(group_openid=gid, **payload)
+            else:
+                await api.post_c2c_message(openid=str(event.get_sender_id()), **payload)
+            return True
+        except Exception as e:
+            logger.warning(f"[{PLUGIN_NAME}] 模板按钮消息发送失败，回退普通发送: {e}")
+            return False
+
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
         md = self._use_md(event)
@@ -590,14 +625,17 @@ class MaimaiQueue(Star):
             # 群聊回复艾特操作人，私聊不带
             if md:
                 # 官方适配器发送时会丢弃 At 组件，Markdown 下改用官方艾特标签
-                chain.append(
-                    Comp.Plain(f'<qqbot-at-user id="{event.get_sender_id()}" />\n{text}')
-                )
+                text = f'<qqbot-at-user id="{event.get_sender_id()}" />\n{text}'
+                chain.append(Comp.Plain(text))
             else:
                 chain.append(Comp.At(qq=event.get_sender_id()))
                 chain.append(Comp.Plain(" " + text))
         else:
             chain.append(Comp.Plain(text))
+        # 配置了按钮模板时优先带按钮直发，失败回退适配器普通发送
+        if md and self.btn_tpl and await self._send_md_with_keyboard(event, text):
+            event.stop_event()
+            return
         yield event.chain_result(chain)
         # 已作为排卡指令处理，阻止事件继续传播 (不再触发 LLM / 其他插件)
         event.stop_event()
@@ -758,8 +796,7 @@ class MaimaiQueue(Star):
                     f"> ⏱ 由 {md_escape(d['name'])} ({d['uid']}) 更新于 "
                     f"{fmt_time(t)}（{time_diff(t)}前）"
                 )
-                lines.append("")
-                lines.append(btn_row(f"{g}+1", f"{g}-1", "j"))
+                lines.extend(self._btn_lines(f"{g}+1", f"{g}-1", "j"))
                 return ("\n".join(lines), True)
             lines = [
                 f"{icon} {label}：{'预计 ' if est else ''}{cards} 卡"
@@ -817,8 +854,7 @@ class MaimaiQueue(Star):
                     f"> 🧮 机厅合计：{nxt} 卡（{m}台 · 机均 {avg_cards(nxt, m)}）",
                 ]
                 lines.extend(f"> {ln}" for ln in infer_lines)
-                lines.append("")
-                lines.append(btn_row("j", "j+1", "j-1"))
+                lines.extend(self._btn_lines("j", "j+1", "j-1"))
                 return ("\n".join(lines), True)
             lines = [
                 f"✅ {fmt_time(now)} 更新成功",
@@ -910,8 +946,7 @@ class MaimaiQueue(Star):
                 btns += ["mai+1", "mai-1"]
             if chu_num is not None:
                 btns += ["chu+1", "chu-1"]
-            lines.append("")
-            lines.append(btn_row(*btns))
+            lines.extend(self._btn_lines(*btns))
             return ("\n".join(lines), True)
 
         lines = [f"✅ {fmt_time(now)} 更新成功"]

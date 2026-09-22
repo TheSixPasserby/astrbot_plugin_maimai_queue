@@ -52,11 +52,15 @@
 接入 QQ 官方机器人（`qq_official` / `qq_official_webhook` 平台）时，回复自动切换为 Markdown 排版（其他平台不受影响，始终纯文本）：
 
 - 标题 / 加粗 / 引用块 / 分割线排版，总览、更新回执、单游戏查询、帮助均有独立版式
-- 附带 `<qqbot-cmd-input>` **可点击指令按钮**（如 `j+1`、`mai+1`、`排卡帮助`），点击后指令自动填入输入框
 - @ 操作人改用官方 `<qqbot-at-user>` 标签（官方适配器发送时会丢弃普通 At 组件）
 - 昵称 / 别名中的 Markdown 特殊字符自动转为全角，防止破坏排版
 
 依赖 AstrBot qq_official 适配器的原生 Markdown 发送能力（平台配置 `use_markdown`，默认开启；发送被拒时适配器会自动回退纯文本）。腾讯已将自定义 Markdown 开放给所有机器人的单聊/群聊场景，无需申请模板。如需关闭本插件的 Markdown 排版，在插件配置中关掉 `markdown_enabled` 即可。
+
+#### 快捷指令按钮（两种形态）
+
+1. **消息内链接式指令**（默认开启，`md_inline_buttons`）：消息底部内嵌 `<qqbot-cmd-input>` 标签（如 `j+1`、`排卡帮助`）。**手机 QQ** 上点击后指令自动填入输入框；**桌面端 QQ 不支持交互**，仅显示为蓝色文字。不需要则关闭该配置。
+2. **消息底部真实按钮**（`md_button_template_id`）：QQ 官方的「自定义按钮」仅内邀开放，但「**按钮模板**」可以在 [QQ 开放平台](https://q.qq.com) 申请：在机器人管理端新建按钮模板（建议配置 `j+1` / `j-1` / `mai+1` / `chu+1` / `j` 等指令按钮，动作类型选「指令按钮」并勾选自动发送），审核通过后把模板 ID 填入本配置。插件会直接调用官方 API 在 Markdown 消息底部挂载按钮；发送失败自动回退为普通 Markdown。配置后消息内的链接式指令自动停用。
 
 ### 合计推算（直接更新合计时）
 
@@ -104,7 +108,9 @@ WebUI 插件配置页可调整（`_conf_schema.json`）：
 - `default_mai_machines` / `default_chu_machines` — 默认机台数（默认各 1）
 - `fresh_hours` — 合计推算的参考数据有效期，小时（默认 2）
 - `smart_match_max` — 智能匹配的消息长度上限（默认 30）
-- `markdown_enabled` — QQ 官方机器人下使用 Markdown 排版与可点击指令按钮（默认开启）
+- `markdown_enabled` — QQ 官方机器人下使用 Markdown 排版（默认开启）
+- `md_inline_buttons` — Markdown 消息内附带链接式指令（默认开启，仅手机端可点击）
+- `md_button_template_id` — 按钮模板 ID，配置后消息底部挂载真实按钮（默认空）
 
 以上为全局默认值，聊天内的 `设置机台` / `设置排卡上限` 按聊天覆盖。
 
